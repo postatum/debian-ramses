@@ -8,16 +8,17 @@ import tempfile
 from io import BytesIO
 from argparse import ArgumentParser
 
-MAIN_CONTAINER = 'ramses_app'
+APP_NAME = 'ramses_app'
+MAIN_CONTAINER = APP_NAME
 DOCKERFILE = '''
 FROM python:3.4
 ENV PYTHONUNBUFFERED 1
 RUN mkdir /code
 WORKDIR /code
 RUN pip install ramses
-RUN echo "{engine_id}" | pcreate -s ramses_starter ramses_app
-WORKDIR /code/ramses_app
-COPY . /code/ramses_app/
+RUN echo "{engine_id}" | pcreate -s ramses_starter {app_name}
+WORKDIR /code/{app_name}
+COPY . /code/{app_name}/
 RUN curl --location --silent --show-error --fail \
         https://github.com/Barzahlen/waitforservices/releases/download/v0.3/waitforservices \
         > /usr/local/bin/waitforservices && \
@@ -130,6 +131,7 @@ class Command(object):
         # Add Dockerfile
         dockerfile = DOCKERFILE.format(
             engine_id=self.engines_ids[self.args.engine],
+            app_name=APP_NAME,
         )
         dockerfile_obj = BytesIO(dockerfile.encode('utf-8'))
         dfinfo = tarfile.TarInfo('Dockerfile')
