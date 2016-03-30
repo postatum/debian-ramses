@@ -23,7 +23,7 @@ RUN curl --location --silent --show-error --fail \
         https://github.com/Barzahlen/waitforservices/releases/download/v0.3/waitforservices \
         > /usr/local/bin/waitforservices && \
     chmod +x /usr/local/bin/waitforservices
-CMD waitforservices; pserve local.ini
+CMD waitforservices; pserve local.ini {overrides}
 '''
 
 
@@ -58,6 +58,11 @@ class Command(object):
             '-e', '--engine',
             help='Engine to use. Either "sqla" or "mongodb".',
             default='sqla', choices=['sqla', 'mongodb'])
+        parser.add_argument(
+            '-c', '--config',
+            help=('Config values to override in INI file. '
+                  'Example: "-c auth=false -c mongodb.host=db"'),
+            action='append', default=[])
         self.args = parser.parse_args()
         self.install_dependencies()
 
@@ -132,6 +137,7 @@ class Command(object):
         dockerfile = DOCKERFILE.format(
             engine_id=self.engines_ids[self.args.engine],
             app_name=APP_NAME,
+            overrides=' '.join(self.args.config),
         )
         dockerfile_obj = BytesIO(dockerfile.encode('utf-8'))
         dfinfo = tarfile.TarInfo('Dockerfile')
