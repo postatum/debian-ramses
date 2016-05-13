@@ -9,7 +9,19 @@ from io import BytesIO
 from argparse import ArgumentParser
 
 APP_NAME = 'ramses_app'
-MAIN_CONTAINER = APP_NAME
+MAIN_CONTAINER_NAME = APP_NAME
+ES_CONTAINER_NAME = 'es'
+DB_CONTAINER_NAME = 'db'
+
+CONFIG_DEFAULTS = {
+    'sqlalchemy.url': 'postgresql://postgres@{}:5432/{}'.format(
+        DB_CONTAINER_NAME, APP_NAME),
+    'mongodb.host': DB_CONTAINER_NAME,
+    'mongodb.db': APP_NAME,
+    'elasticsearch.hosts': '{}:9200'.format(ES_CONTAINER_NAME),
+    'elasticsearch.index_name': APP_NAME,
+}
+
 DOCKERFILE = '''
 FROM python:3.4
 ENV PYTHONUNBUFFERED 1
@@ -60,7 +72,9 @@ class Command(object):
             default='sqla', choices=['sqla', 'mongodb'])
         parser.add_argument(
             '-c', '--config',
-            help=('Config values to override in INI file. '
+            help=('Config values to override default INI values. '
+                  'Only used when no INI file is defined. Otherwise '
+                  'INI file values take precedence.'
                   'Example: "-c auth=false -c mongodb.host=db"'),
             action='append', default=[])
         self.args = parser.parse_args()
@@ -134,10 +148,11 @@ class Command(object):
         tar = tarfile.open(mode='w', fileobj=tmp_file)
 
         # Add Dockerfile
+        overrides = self._get_overrides()
         dockerfile = DOCKERFILE.format(
             engine_id=self.engines_ids[self.args.engine],
             app_name=APP_NAME,
-            overrides=' '.join(self.args.config),
+            overrides=overrides,
         )
         dockerfile_obj = BytesIO(dockerfile.encode('utf-8'))
         dfinfo = tarfile.TarInfo('Dockerfile')
@@ -152,25 +167,43 @@ class Command(object):
         tmp_file.seek(0)
         return tmp_file
 
+    def _get_overrides(self):
+        # If user provides their own .ini file - use it
+        localini = os.path.abspath(os.path.join(
+            self.args.path, 'local.ini'))
+        if os.path.exists(localini):
+            log('Using provided local.ini. --config param values and '
+                'defaults will be ignored.')
+            return ''
+
+        # If no .ini provided and no cli params passed - use defaults
+        passed = list(self.args.config)
+        passed_keys = [p.split('=')[0] for p in self.args.config]
+        for key, val in CONFIG_DEFAULTS.items():
+            if key not in passed_keys:
+                passed.append('{}={}'.format(key, val))
+        return ' '.join(passed)
+
     def run_main_container(self, db_cont, es_cont):
-        log('Building image "{}"'.format(MAIN_CONTAINER))
+        log('Building image "{}"'.format(MAIN_CONTAINER_NAME))
         ctx_tar = self._get_context_tar()
         list(self.cli.build(
             fileobj=ctx_tar, custom_context=True,
             rm=True, forcerm=True,
-            tag=MAIN_CONTAINER))
+            tag=MAIN_CONTAINER_NAME))
 
-        log('Creating container from image "{}"'.format(MAIN_CONTAINER))
+        log('Creating container from image "{}"'.format(
+            MAIN_CONTAINER_NAME))
         ports = {6543: 6543}
         host_config = self.cli.create_host_config(
             port_bindings=ports,
             links={
-                db_cont.get('Id'): 'db',
-                es_cont.get('Id'): 'es',
+                db_cont.get('Id'): DB_CONTAINER_NAME,
+                es_cont.get('Id'): ES_CONTAINER_NAME,
             }
         )
         web_cont = self.cli.create_container(
-            image=MAIN_CONTAINER,
+            image=MAIN_CONTAINER_NAME,
             ports=list(ports.keys()),
             host_config=host_config)
         web_cont_id = web_cont.get('Id')
