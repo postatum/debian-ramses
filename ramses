@@ -72,9 +72,7 @@ class Command(object):
             default='sqla', choices=['sqla', 'mongodb'])
         parser.add_argument(
             '-c', '--config',
-            help=('Config values to override default INI values. '
-                  'Only used when no INI file is defined. Otherwise '
-                  'INI file values take precedence.'
+            help=('Config values to override values if INI file. '
                   'Example: "-c auth=false -c mongodb.host=db"'),
             action='append', default=[])
         self.args = parser.parse_args()
@@ -168,18 +166,13 @@ class Command(object):
         return tmp_file
 
     def _get_overrides(self):
-        # If user provides their own .ini file - use it
         localini = os.path.abspath(os.path.join(
             self.args.path, 'local.ini'))
-        if os.path.exists(localini):
-            log('Using provided local.ini. --config param values and '
-                'defaults will be ignored.')
-            return ''
+        defaults = {} if os.path.exists(localini) else CONFIG_DEFAULTS
 
-        # If no .ini provided and no cli params passed - use defaults
         passed = list(self.args.config)
         passed_keys = [p.split('=')[0] for p in self.args.config]
-        for key, val in CONFIG_DEFAULTS.items():
+        for key, val in defaults.items():
             if key not in passed_keys:
                 passed.append('{}={}'.format(key, val))
         return ' '.join(passed)
